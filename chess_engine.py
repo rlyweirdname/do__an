@@ -92,9 +92,9 @@ def evaluate_board(board):
         rank = index // 8
         file = index % 8
 
-        if piece != 0: # Not an empty square
-            piece_type_char = '.' # Initialize
-            if piece > 0: # White pieces
+        if piece != 0: 
+            piece_type_char = '.'
+            if piece > 0: 
                 if piece == 1: piece_type_char = 'p'; white_score += piece_values['p']; white_score += pawn_pst_values[rank][file]
                 elif piece == 2: piece_type_char = 'n'; white_score += piece_values['n']; white_score += knight_pst_values[rank][file]
                 elif piece == 3: piece_type_char = 'b'; white_score += piece_values['b']; white_score += bishop_pst_values[rank][file]
@@ -102,7 +102,7 @@ def evaluate_board(board):
                 elif piece == 5: piece_type_char = 'q'; white_score += piece_values['q']; white_score += queen_pst_values[rank][file]
                 elif piece == 6: piece_type_char = 'k'; piece_char = 'K'; 
                 white_score += king_pst_values[rank][file] 
-            else: # Black pieces (piece < 0)
+            else:
                 if piece == -1: piece_type_char = 'p'; black_score += piece_values['p']; black_score += pawn_pst_values[7-rank][file] 
                 elif piece == -2: piece_type_char = 'n'; black_score += piece_values['n']; black_score += knight_pst_values[7-rank][file] 
                 elif piece == -3: piece_type_char = 'b'; black_score += piece_values['b']; black_score += bishop_pst_values[7-rank][file] 
@@ -135,7 +135,7 @@ def get_legal_moves(board, is_white_turn):
         piece = board[from_index]
 
         if piece != 0:
-            if (is_white_turn and piece > 0) or (not is_white_turn and piece < 0): # Correct color piece
+            if (is_white_turn and piece > 0) or (not is_white_turn and piece < 0):
 
                 piece_type = abs(piece)
 
@@ -144,7 +144,7 @@ def get_legal_moves(board, is_white_turn):
                 elif piece_type == 2: possible_piece_moves = generate_knight_moves(board, from_index)
                 elif piece_type == 3: possible_piece_moves = generate_bishop_moves(board, from_index)
                 elif piece_type == 4: 
-                    possible_piece_moves = generate_rook_moves(board, from_index) 
+                     possible_piece_moves = generate_rook_moves(board, from_index) 
                 elif piece_type == 5: possible_piece_moves = generate_queen_moves(board, from_index)
                 elif piece_type == 6: possible_piece_moves = generate_king_moves(board, from_index)
 
@@ -403,8 +403,8 @@ best_move_found = find_best_move(current_board, depth=4)
 end_time = time.time()
 search_time = end_time - start_time
 
-print(f"Nước đi hay nhất theo Minimax (depth 6): {best_move_found}")
-print(f"Đánh giá Minimax của nước đi tốt nhất: {alphabeta(current_board, 6, +9999, -9999, True)}")
+print(f"Nước đi hay nhất theo Minimax (depth 4): {best_move_found}")
+print(f"Đánh giá Minimax của nước đi tốt nhất: {alphabeta(current_board, 4, -9999, +9999, True)}")
 print(f"Thời gian tìm kiếm: {search_time:.4f} giây")
 
 if best_move_found:

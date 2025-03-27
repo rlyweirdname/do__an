@@ -31,7 +31,6 @@ class ChessGUI(tk.Tk):
         self.update_board_pieces()
 
     def load_piece_images(self):
-        """Loads the images of the chess pieces."""
         self.piece_images = {}
         piece_filenames = {
             'P': 'wp.png', 'N': 'wN.png', 'B': 'wB.png', 'R': 'wR.png', 'Q': 'wQ.png', 'K': 'wK.png',
@@ -90,7 +89,7 @@ class ChessGUI(tk.Tk):
                 
                 if not self.is_white_turn:
                     print(f"--- Engine (Black) is thinking... is_white_turn BEFORE engine search: {self.is_white_turn} ---") 
-                    engine_move = find_best_move(self.board_array, depth=3, is_maximizing_player=False)
+                    engine_move = find_best_move(self.board_array, depth=4, is_maximizing_player=False)
                     if engine_move:
                         make_move(self.board_array, engine_move)
                         self.update_board_pieces()

@@ -403,8 +403,8 @@ best_move_found = find_best_move(current_board, depth=4)
 end_time = time.time()
 search_time = end_time - start_time
 
-print(f"Nước đi hay nhất theo Minimax (depth 4): {best_move_found}")
-print(f"Đánh giá Minimax của nước đi tốt nhất: {alphabeta(current_board, 4, -9999, +9999, True)}")
+print(f"Nước đi hay nhất theo Minimax (depth 6): {best_move_found}")
+print(f"Đánh giá Minimax của nước đi tốt nhất: {alphabeta(current_board, 6, +9999, -9999, True)}")
 print(f"Thời gian tìm kiếm: {search_time:.4f} giây")
 
 if best_move_found:

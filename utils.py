@@ -101,6 +101,17 @@ def piece_str_from_value(piece_value):
     elif piece_abs == 6: piece_char = 'K' if piece_value > 0 else 'k'
     return piece_char
 
+def piece_int_to_char(piece_value):
+    """
+    Converts a piece's integer value to its character representation.
+    Positive values are white pieces, negative values are black pieces.
+    """
+    piece_map = {
+        1: 'P', 2: 'N', 3: 'B', 4: 'R', 5: 'Q', 6: 'K',  # White pieces
+        -1: 'p', -2: 'n', -3: 'b', -4: 'r', -5: 'q', -6: 'k'  # Black pieces
+    }
+    return piece_map.get(piece_value, '.')
+
 def create_test_board_knight_open():
     """Creates a test board with a white Knight at d4 for testing."""
     test_board = [0] * 64
@@ -154,6 +165,6 @@ def create_test_board_empty():
 
           
 def create_test_board_starting_pos():
-    return get_starting_board_array() 
+    return get_starting_board_array()
 
 

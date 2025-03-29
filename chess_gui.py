@@ -1,195 +1,393 @@
 import tkinter as tk
-from PIL import Image, ImageTk
+from PIL import Image, ImageTk  # Requires 'pip install Pillow'
 import utils as u
-from chess_engine import create_test_board_minimax_start, find_best_move, make_move, get_legal_moves
+import chess_engine  # Import the module itself to access its globals robustly
+from chess_engine import ( # Import only the functions we need
+    create_test_board_minimax_start,
+    find_best_move,
+    make_move,
+    get_legal_moves,
+    is_king_in_check,
+)
 
 class ChessGUI(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Basic Chess Engine GUI")
-        self.geometry("600x600")
+        self.title("Chess Engine GUI")
+        self.geometry("600x640") # Increased height slightly for history
 
-        self.board_array = create_test_board_minimax_start()
-        self.is_white_turn = True
+        # --- Game State Tracking (Mirrors engine state) ---
+        self.board_array = u.get_starting_board_array()
+        # Read initial state directly from the engine module using original names
+        self.castling_rights = chess_engine.castling_rights
+        self.en_passant_target = chess_engine.en_passant_target
+        self.is_white_turn = (chess_engine.side_to_move == 'w')
 
-        self.canvas = tk.Canvas(self, width=400, height=400, borderwidth=2, relief="solid") 
-        self.canvas.pack(pady=20)
+        # --- UI Elements ---
+        self.canvas = tk.Canvas(self, width=480, height=480, borderwidth=1, relief="solid")
+        self.canvas.pack(pady=10)
+        self.square_size = 480 / 8
 
-        self.canvas.bind("<Button-1>", self.on_square_click)
-        self.from_square_index = None
+        self.status_label = tk.Label(self, text="White to move", font=("Arial", 12))
+        self.status_label.pack()
 
-        self.engine_move_label = tk.Label(self, text="Engine's Move:")
-        self.engine_move_label.pack()
-        self.engine_move_display = tk.Label(self, text="") 
+        self.engine_move_display = tk.Label(self, text="Engine's Last Move: None", font=("Arial", 10))
         self.engine_move_display.pack()
 
-        self.error_message_label = tk.Label(self, text="", fg="red")
+        self.error_message_label = tk.Label(self, text="", fg="red", font=("Arial", 10))
         self.error_message_label.pack()
 
+        # --- ADD HISTORY DISPLAY ---
+        history_frame = tk.Frame(self) # Frame to hold text and scrollbar
+        history_frame.pack(pady=5, fill=tk.X, expand=False, padx=20) # Add padding
+
+        history_label = tk.Label(history_frame, text="Move History:", font=("Arial", 10))
+        history_label.pack(side=tk.TOP, anchor='w') # Label above the text box
+
+        self.history_scrollbar = tk.Scrollbar(history_frame, orient=tk.VERTICAL)
+        self.history_text = tk.Text(
+            history_frame,
+            height=6, # Adjust height as needed
+            width=40, # Adjust width as needed
+            wrap=tk.WORD, # Wrap lines at word boundaries
+            yscrollcommand=self.history_scrollbar.set,
+            font=("Courier New", 9), # Use a fixed-width font
+            state='disabled' # Make it read-only initially
+        )
+        self.history_scrollbar.config(command=self.history_text.yview)
+
+        self.history_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
+        self.history_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        # --- END HISTORY DISPLAY ---
+
+        # --- Event Binding & State ---
+        self.canvas.bind("<Button-1>", self.on_square_click)
+        self.from_square_index = None
+        self.possible_moves_from_selected = []
+
+        # --- ADD MOVE HISTORY LIST ---
+        self.move_history = [] # Stores the full move tuples (from, to, info)
+        # --- END MOVE HISTORY LIST ---
+
+        # --- Initialization ---
+        self.piece_images_pil = {}
+        self.piece_images_tk = {}
+        self.load_piece_images()
         self.draw_board()
-        self.load_piece_images() 
         self.update_board_pieces()
+        self.update_status_label()
+
 
     def load_piece_images(self):
-        self.piece_images = {}
+        """Loads piece images from the 'images' subdirectory."""
         piece_filenames = {
             'P': 'wp.png', 'N': 'wN.png', 'B': 'wB.png', 'R': 'wR.png', 'Q': 'wQ.png', 'K': 'wK.png',
             'p': 'p.png', 'n': 'n.png', 'b': 'b.png', 'r': 'r.png', 'q': 'q.png', 'k': 'k.png'
         }
-        for piece, filename in piece_filenames.items():
-            image = Image.open(f"images/{filename}") 
-            self.piece_images[piece] = ImageTk.PhotoImage(image)
+        target_size = int(self.square_size * 0.8)
+        try:
+            for piece_char, filename in piece_filenames.items():
+                path = f"images/{filename}"
+                image = Image.open(path).convert("RGBA")
+                image = image.resize((target_size, target_size), Image.Resampling.LANCZOS)
+                self.piece_images_pil[piece_char] = image
+                self.piece_images_tk[piece_char] = ImageTk.PhotoImage(image)
+            print("Piece images loaded successfully.")
+        except FileNotFoundError as e:
+            print(f"Error loading image: {e}. Make sure 'images' directory exists and contains all piece PNGs (wp.png, bp.png, etc.).")
+            self.error_message_label.config(text=f"Error loading image: {e}")
+            self.destroy()
+        except Exception as e:
+            print(f"An error occurred during image loading: {e}")
+            self.error_message_label.config(text=f"Image loading error: {e}")
+            self.destroy()
 
-    def on_square_click(self, event):
-        file = int(event.x // (400 / 8)) 
-        rank = int(event.y // (400 / 8))
-        index_1d = rank * 8 + file
-
-        square_notation = u.index_1d_to_square(index_1d) 
-
-        print(f"Clicked on square: {square_notation} (Index: {index_1d})") 
-
-        if self.from_square_index is None: 
-            self.from_square_index = index_1d
-            print(f"  Selected FROM square: {square_notation} (Index: {index_1d})")
-            self.highlight_square(index_1d, "blue") 
-        else:
-            to_square_index = index_1d
-            print(f"  Selected TO square: {u.index_1d_to_square(to_square_index)} (Index: {to_square_index})") 
-
-            move = (self.from_square_index, to_square_index)
-            self.handle_move(move)
-
-            self.clear_square_highlight(self.from_square_index) 
-            self.from_square_index = None 
-
-    def handle_move(self, move):
-        from_index, to_index = move
-
-        self.error_message_label.config(text="")
-
-        legal_moves = get_legal_moves(self.board_array, self.is_white_turn)
-
-        is_move_legal = False
-        move_to_check = (from_index, to_index)
-        for legal_move in legal_moves:
-            if legal_move[:2] == move_to_check[:2]:
-                is_move_legal = True
-                break
-
-        if is_move_legal:
-            try:
-
-                captured_piece = make_move(self.board_array, move)
-                self.update_board_pieces()
-                print(f"White move done. is_white_turn BEFORE engine check: {self.is_white_turn}")  
-
-                self.is_white_turn = False  
-
-                
-                if not self.is_white_turn:
-                    print(f"--- Engine (Black) is thinking... is_white_turn BEFORE engine search: {self.is_white_turn} ---") 
-                    engine_move = find_best_move(self.board_array, depth=4, is_maximizing_player=False)
-                    if engine_move:
-                        make_move(self.board_array, engine_move)
-                        self.update_board_pieces()
-                        engine_move_algebraic = u.index_1d_to_square(engine_move[0]) + "-" + u.index_1d_to_square(engine_move[1])
-                        self.engine_move_display.config(text=engine_move_algebraic)
-                        self.is_white_turn = True  
-                        print(f"Engine (Black) move done: {engine_move_algebraic}. is_white_turn AFTER engine move: {self.is_white_turn}") # DEBUG
-                    else:
-                        self.engine_move_display.config(text="No engine move found (Checkmate/Stalemate?)")
-                        print("Engine (Black) - No legal move found!")
-
-            except Exception as e:
-                self.error_message_label.config(text=f"Error making move: {e}")
-
-        else:
-            self.error_message_label.config(text="Illegal move!")
-            print(f"Illegal move attempted: {u.index_1d_to_square(from_index)}-{u.index_1d_to_square(to_index)}")
-
-
-    def highlight_square(self, index_1d, color):
-        board_size = 400
-        square_size = board_size / 8
-        rank = index_1d // 8
-        file = index_1d % 8
-        x1 = file * square_size
-        y1 = rank * square_size
-        x2 = x1 + square_size
-        y2 = y1 + square_size
-        self.canvas.create_rectangle(x1, y1, x2, y2, outline=color, width=3, tags="highlight") 
-
-
-    def clear_square_highlight(self, index_1d):
-
-        self.canvas.delete("highlight")
 
     def draw_board(self):
-
-        board_size = 400 
-        square_size = board_size / 8
-
+        """Draws the checkerboard pattern on the canvas."""
         for rank in range(8):
             for file in range(8):
-                x1 = file * square_size
-                y1 = rank * square_size
-                x2 = x1 + square_size
-                y2 = y1 + square_size
-                color = "white" if (rank + file) % 2 == 0 else "light gray" 
-                self.canvas.create_rectangle(x1, y1, x2, y2, fill=color)
+                x1, y1 = file * self.square_size, rank * self.square_size
+                x2, y2 = x1 + self.square_size, y1 + self.square_size
+                color = "white" if (rank + file) % 2 == 0 else "#D3D3D3"
+                self.canvas.create_rectangle(x1, y1, x2, y2, fill=color, tags="square")
+
 
     def update_board_pieces(self):
-        self.canvas.delete("piece") 
-
-        board_size = 400
-        square_size = board_size / 8
-        piece_symbols = { 
-            0: '', 1: 'P', -1: 'p', 2: 'N', -2: 'n', 3: 'B', -3: 'b', 4: 'R', -4: 'r', 5: 'Q', -5: 'q', 6: 'K', -6: 'k'
-        }
-
+        """Clears old pieces and draws pieces based on the current board_array."""
+        self.canvas.delete("piece")
+        piece_symbols = { 1:'P',-1:'p', 2:'N',-2:'n', 3:'B',-3:'b', 4:'R',-4:'r', 5:'Q',-5:'q', 6:'K',-6:'k'}
         for index in range(64):
             piece_value = self.board_array[index]
-            piece_symbol = piece_symbols[piece_value]
-            if piece_symbol: 
-                rank = index // 8
-                file = index % 8
-                x_center = (file * square_size) + square_size / 2
-                y_center = (rank * square_size) + square_size / 2
-                self.canvas.create_image(x_center, y_center, image=self.piece_images[piece_symbol], tags="piece") # Tag for easy deletion
+            piece_symbol = piece_symbols.get(piece_value)
+            if piece_symbol and piece_symbol in self.piece_images_tk:
+                rank, file = divmod(index, 8)
+                x_center = (file * self.square_size) + self.square_size / 2
+                y_center = (rank * self.square_size) + self.square_size / 2
+                self.canvas.create_image(x_center, y_center, image=self.piece_images_tk[piece_symbol], tags="piece")
 
 
-    def handle_user_move(self):
-        user_move_notation = self.move_entry.get()
-        self.move_entry.delete(0, tk.END)
+    def highlight_square(self, index_1d, color, tag="highlight"):
+        """Highlights a given square with an outline."""
+        rank, file = divmod(index_1d, 8)
+        x1, y1 = file * self.square_size, rank * self.square_size
+        x2, y2 = x1 + self.square_size, y1 + self.square_size
+        self.canvas.create_rectangle(x1, y1, x2, y2, outline=color, width=3, tags=tag)
 
-        self.error_message_label.config(text="") 
+
+    def highlight_legal_moves(self, moves):
+        """Draws small circles on legal destination squares."""
+        self.canvas.delete("legal_move_highlight")
+        radius = self.square_size / 8
+        for move in moves:
+            to_index = move[1]
+            rank, file = divmod(to_index, 8)
+            x_center = (file * self.square_size) + self.square_size / 2
+            y_center = (rank * self.square_size) + self.square_size / 2
+            x1, y1 = x_center - radius, y_center - radius
+            x2, y2 = x_center + radius, y_center + radius
+            self.canvas.create_oval(x1, y1, x2, y2, fill='gray', outline="", tags="legal_move_highlight")
+
+
+    def clear_highlights(self):
+        """Clears all highlights from the board."""
+        self.canvas.delete("highlight")
+        self.canvas.delete("legal_move_highlight")
+
+
+    def update_status_label(self):
+        """Updates the label indicating whose turn it is."""
+        turn_text = "White to move" if self.is_white_turn else ""
+        self.status_label.config(text=turn_text)
+
+    # --- Helper for Formatting Moves ---
+    def format_move_algebraic(self, move_tuple):
+        """Converts a move tuple to simple algebraic string."""
+        from_sq = u.index_1d_to_square(move_tuple[0])
+        to_sq = u.index_1d_to_square(move_tuple[1])
+        move_info = move_tuple[2] if len(move_tuple) > 2 else None
+
+        if move_info == 'castle_k': return "O-O"
+        elif move_info == 'castle_q': return "O-O-O"
+        elif move_info == 'ep': return f"{from_sq}x{to_sq} e.p." # Indicate en passant
+        elif move_info in ('q', 'r', 'n', 'b', 'Q', 'R', 'N', 'B'): return f"{from_sq}-{to_sq}={move_info.upper()}"
+        # Could add 'x' for captures by checking board state before move, but simpler without for now
+        else: return f"{from_sq}-{to_sq}"
+
+    # --- Helper for Updating History Display ---
+    def update_history_display(self):
+        """Updates the text box with the formatted move history."""
+        self.history_text.config(state='normal') # Enable writing
+        self.history_text.delete('1.0', tk.END) # Clear previous content
+
+        full_move_number = 1
+        for i, move_tuple in enumerate(self.move_history):
+            move_str = self.format_move_algebraic(move_tuple)
+            if i % 2 == 0: # White's move
+                if i > 0: self.history_text.insert(tk.END, "\n")
+                self.history_text.insert(tk.END, f"{full_move_number}. {move_str}")
+            else: # Black's move
+                self.history_text.insert(tk.END, f"  {move_str}") # Indent black's move slightly
+                full_move_number += 1
+
+        self.history_text.see(tk.END) # Scroll to the bottom
+        self.history_text.config(state='disabled') # Disable writing again
+
+
+    def on_square_click(self, event):
+        """Handles clicks on the board for selecting and making moves."""
+        if not self.is_white_turn:
+            print("Ignoring click - Not player's turn.")
+            return
+
+        file = int(event.x // self.square_size)
+        rank = int(event.y // self.square_size)
+        if not (0 <= file <= 7 and 0 <= rank <= 7): return
+        index_1d = rank * 8 + file
+        clicked_piece_value = self.board_array[index_1d]
+        square_notation = u.index_1d_to_square(index_1d)
+
+        print(f"Clicked on {square_notation} (Index: {index_1d})")
+        self.error_message_label.config(text="")
+
+        if self.from_square_index is None:
+            # First Click
+            if clicked_piece_value > 0:
+                self.from_square_index = index_1d
+                print(f"  Selected FROM: {square_notation} (Value: {clicked_piece_value})")
+                self.clear_highlights()
+                self.highlight_square(index_1d, "blue")
+                try:
+                    all_legal_moves = get_legal_moves(self.board_array, True, self.castling_rights, self.en_passant_target)
+                    self.possible_moves_from_selected = [m for m in all_legal_moves if m[0] == self.from_square_index]
+                    self.highlight_legal_moves(self.possible_moves_from_selected)
+                    if not self.possible_moves_from_selected:
+                         print(f"  No legal moves for piece at {square_notation}")
+                         self.error_message_label.config(text="No legal moves")
+                         self.clear_highlights(); self.from_square_index = None
+                except Exception as e:
+                    print(f"Error getting legal moves: {e}")
+                    self.error_message_label.config(text=f"Err checking moves")
+                    self.clear_highlights(); self.from_square_index = None
+            else:
+                self.clear_highlights(); self.from_square_index = None
+        else:
+            # Second Click
+            to_square_index = index_1d
+            print(f"  Selected TO: {u.index_1d_to_square(to_square_index)}")
+            complete_move_tuple = None
+            for move in self.possible_moves_from_selected:
+                if move[1] == to_square_index: complete_move_tuple = move; break
+            self.clear_highlights()
+
+            if complete_move_tuple:
+                print(f"  Attempting legal move: {complete_move_tuple}")
+                # Default promotion to Queen if needed
+                if abs(self.board_array[complete_move_tuple[0]]) == 1 and (to_square_index // 8) == 0 :
+                    if len(complete_move_tuple) < 3 or complete_move_tuple[2] not in ('q','r','n','b'):
+                         print("  (Promotion detected: defaulting to Queen)")
+                         complete_move_tuple = (complete_move_tuple[0], complete_move_tuple[1], 'q')
+                    elif len(complete_move_tuple) > 2: print(f"  (Promotion move: {complete_move_tuple[2]})")
+                self.handle_user_turn(complete_move_tuple)
+
+            elif clicked_piece_value > 0 and index_1d != self.from_square_index:
+                # Change Selection
+                self.from_square_index = index_1d
+                print(f"  Changed selection TO: {square_notation} (Value: {clicked_piece_value})")
+                self.highlight_square(index_1d, "blue")
+                try:
+                    all_legal_moves = get_legal_moves(self.board_array, True, self.castling_rights, self.en_passant_target)
+                    self.possible_moves_from_selected = [m for m in all_legal_moves if m[0] == self.from_square_index]
+                    self.highlight_legal_moves(self.possible_moves_from_selected)
+                    if not self.possible_moves_from_selected:
+                         print(f"  No legal moves for piece at {square_notation}")
+                         self.error_message_label.config(text="No legal moves")
+                         self.clear_highlights(); self.from_square_index = None
+                except Exception as e:
+                    print(f"Error getting legal moves: {e}")
+                    self.error_message_label.config(text=f"Err checking moves")
+                    self.clear_highlights(); self.from_square_index = None
+                return # Keep selection state
+            else:
+                print("  Invalid destination or deselecting.")
+
+            self.from_square_index = None; self.possible_moves_from_selected = []
+
+
+    def handle_user_turn(self, move_tuple):
+        """Makes the user's move, updates state, checks game end, and triggers engine."""
+        if not self.is_white_turn: return
+
+        print(f"Making user move: {move_tuple}")
+        try:
+            _ = make_move(self.board_array, move_tuple, self.castling_rights, self.en_passant_target)
+
+            # Add to history BEFORE updating GUI state mirroring engine
+            self.move_history.append(move_tuple)
+            self.update_history_display()
+
+            self.castling_rights = chess_engine.castling_rights
+            self.en_passant_target = chess_engine.en_passant_target
+            self.is_white_turn = (chess_engine.side_to_move == 'w')
+            print(f"  State after user move: CR='{self.castling_rights}', EP={self.en_passant_target}, Turn={'W' if self.is_white_turn else 'B'}")
+
+            self.update_board_pieces()
+            self.update_status_label()
+
+            is_game_over = self.check_game_over(for_engine_turn=True)
+            if not is_game_over:
+                print("Scheduling engine move...")
+                self.after(100, lambda: self.trigger_engine_move()) # Restore automatic trigger
+            else:
+                print("Game over detected after player move.")
+
+        except Exception as e:
+            print(f"Error during user move execution: {e}")
+            import traceback; traceback.print_exc()
+            self.error_message_label.config(text=f"Error making move: {e}")
+
+
+    def trigger_engine_move(self):
+        """Handles the engine's thinking and move execution."""
+        print("\n--- Debug: Entering trigger_engine_move ---")
+        if self.is_white_turn: return
+
+        print(f"Debug: Engine (Black) thinking... Current State:")
+        print(f"  Turn: B, CR='{self.castling_rights}', EP={self.en_passant_target}")
+        self.status_label.config(text="Engine thinking...")
+        self.update_idletasks()
 
         try:
-            from_sq_notation = user_move_notation[:2]
-            to_sq_notation = user_move_notation[2:]
-            from_index = u.square_to_index_1d(from_sq_notation)
-            to_index = u.square_to_index_1d(to_sq_notation)
-            move = (from_index, to_index)
+            search_depth = 4
+            print(f"Debug: Calling find_best_move (depth={search_depth}, is_maximizing=False)")
+            engine_best_move, engine_eval = find_best_move(
+                self.board_array, depth=search_depth, is_maximizing_player=False,
+                current_castling_rights=self.castling_rights,
+                current_en_passant_target=self.en_passant_target
+            )
+            print(f"Debug: find_best_move returned: move={engine_best_move}, eval={engine_eval}")
 
-            make_move(self.board_array, move)
-            self.update_board_pieces()
-            self.is_white_turn = not self.is_white_turn
+            if engine_best_move:
+                # Display last move BEFORE making it
+                engine_move_str_formatted = self.format_move_algebraic(engine_best_move)
+                self.engine_move_display.config(text=f"Engine's Last Move: {engine_move_str_formatted}")
 
-            if not self.is_white_turn: 
-                engine_move = find_best_move(self.board_array, depth=3)
-                if engine_move:
-                    make_move(self.board_array, engine_move)
-                    self.update_board_pieces()
-                    engine_move_algebraic = u.index_1d_to_square(engine_move[0]) + "-" + u.index_1d_to_square(engine_move[1])
-                    self.engine_move_display.config(text=engine_move_algebraic)
-                    self.is_white_turn = not self.is_white_turn
+                _ = make_move(self.board_array, engine_best_move, self.castling_rights, self.en_passant_target)
+
+                # Add to history AFTER making the move
+                self.move_history.append(engine_best_move)
+                self.update_history_display()
+
+                self.castling_rights = chess_engine.castling_rights
+                self.en_passant_target = chess_engine.en_passant_target
+                self.is_white_turn = (chess_engine.side_to_move == 'w')
+                print(f"Debug: State AFTER engine move: CR='{self.castling_rights}', EP={self.en_passant_target}, Turn=W")
+
+                self.update_board_pieces()
+                self.update_status_label()
+
+                self.check_game_over(for_engine_turn=False) # Check if player now has moves
+            else:
+                print("Debug: Engine returned no move. Game Over.")
+                self.check_game_over(for_engine_turn=True) # Display final status for Black
+
+        except Exception as e:
+            print(f"\n--- ERROR during engine move logic ---")
+            import traceback; traceback.print_exc()
+            self.error_message_label.config(text=f"Engine Error: {e}")
+            self.status_label.config(text="Engine Error!")
+
+
+    def check_game_over(self, for_engine_turn):
+        """Checks if the player whose turn it is has legal moves, updates status if over."""
+        player_is_white = not for_engine_turn
+        # Check moves for the player whose turn it *would* be
+        current_player_legal_moves = get_legal_moves(
+            self.board_array, player_is_white, self.castling_rights, self.en_passant_target
+        )
+
+        if not current_player_legal_moves:
+            try:
+                king_in_check = is_king_in_check(self.board_array, player_is_white)
+                if king_in_check:
+                    winner = "Black" if player_is_white else "White"
+                    print(f"Checkmate! {winner} wins.")
+                    self.status_label.config(text=f"Checkmate! {winner} wins.")
                 else:
-                    self.engine_move_display.config(text="No engine move found (Checkmate/Stalemate?)")
+                    print("Stalemate! Draw.")
+                    self.status_label.config(text="Stalemate! Draw.")
+                self.engine_move_display.config(text="Game Over")
+                # Consider disabling interaction
+                self.canvas.unbind("<Button-1>")
+                return True
+            except Exception as check_err:
+                 print(f"Debug: Error during is_king_in_check: {check_err}")
+                 self.status_label.config(text="Error checking game end")
+                 return False # Or True? Undefined state
+        return False
 
-        except ValueError:
-            self.error_message_label.config(text="Invalid move notation (e.g., e2e4)")
 
+# --- Main Execution ---
 if __name__ == "__main__":
     gui = ChessGUI()
     gui.mainloop()

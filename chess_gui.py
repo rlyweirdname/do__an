@@ -1,8 +1,9 @@
 import tkinter as tk
-from PIL import Image, ImageTk  # Requires 'pip install Pillow'
+from PIL import Image, ImageTk 
 import utils as u
-import chess_engine  # Import the module itself to access its globals robustly
-from chess_engine import ( # Import only the functions we need
+import time
+import chess_engine 
+from chess_engine import ( 
     create_test_board_minimax_start,
     find_best_move,
     make_move,
@@ -14,16 +15,13 @@ class ChessGUI(tk.Tk):
     def __init__(self):
         super().__init__()
         self.title("Chess Engine GUI")
-        self.geometry("600x640") # Increased height slightly for history
+        self.geometry("600x640")
 
-        # --- Game State Tracking (Mirrors engine state) ---
         self.board_array = u.get_starting_board_array()
-        # Read initial state directly from the engine module using original names
         self.castling_rights = chess_engine.castling_rights
         self.en_passant_target = chess_engine.en_passant_target
         self.is_white_turn = (chess_engine.side_to_move == 'w')
 
-        # --- UI Elements ---
         self.canvas = tk.Canvas(self, width=480, height=480, borderwidth=1, relief="solid")
         self.canvas.pack(pady=10)
         self.square_size = 480 / 8
@@ -37,39 +35,33 @@ class ChessGUI(tk.Tk):
         self.error_message_label = tk.Label(self, text="", fg="red", font=("Arial", 10))
         self.error_message_label.pack()
 
-        # --- ADD HISTORY DISPLAY ---
-        history_frame = tk.Frame(self) # Frame to hold text and scrollbar
-        history_frame.pack(pady=5, fill=tk.X, expand=False, padx=20) # Add padding
+        history_frame = tk.Frame(self) 
+        history_frame.pack(pady=5, fill=tk.X, expand=False, padx=20) 
 
         history_label = tk.Label(history_frame, text="Move History:", font=("Arial", 10))
-        history_label.pack(side=tk.TOP, anchor='w') # Label above the text box
+        history_label.pack(side=tk.TOP, anchor='w')
 
         self.history_scrollbar = tk.Scrollbar(history_frame, orient=tk.VERTICAL)
         self.history_text = tk.Text(
             history_frame,
-            height=6, # Adjust height as needed
-            width=40, # Adjust width as needed
-            wrap=tk.WORD, # Wrap lines at word boundaries
+            height=6,
+            width=40, 
+            wrap=tk.WORD,
             yscrollcommand=self.history_scrollbar.set,
-            font=("Courier New", 9), # Use a fixed-width font
-            state='disabled' # Make it read-only initially
+            font=("Courier New", 9),
+            state='disabled'
         )
         self.history_scrollbar.config(command=self.history_text.yview)
 
         self.history_scrollbar.pack(side=tk.RIGHT, fill=tk.Y)
         self.history_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        # --- END HISTORY DISPLAY ---
 
-        # --- Event Binding & State ---
         self.canvas.bind("<Button-1>", self.on_square_click)
         self.from_square_index = None
         self.possible_moves_from_selected = []
 
-        # --- ADD MOVE HISTORY LIST ---
-        self.move_history = [] # Stores the full move tuples (from, to, info)
-        # --- END MOVE HISTORY LIST ---
+        self.move_history = []
 
-        # --- Initialization ---
         self.piece_images_pil = {}
         self.piece_images_tk = {}
         self.load_piece_images()
@@ -79,7 +71,6 @@ class ChessGUI(tk.Tk):
 
 
     def load_piece_images(self):
-        """Loads piece images from the 'images' subdirectory."""
         piece_filenames = {
             'P': 'wp.png', 'N': 'wN.png', 'B': 'wB.png', 'R': 'wR.png', 'Q': 'wQ.png', 'K': 'wK.png',
             'p': 'p.png', 'n': 'n.png', 'b': 'b.png', 'r': 'r.png', 'q': 'q.png', 'k': 'k.png'
@@ -104,7 +95,6 @@ class ChessGUI(tk.Tk):
 
 
     def draw_board(self):
-        """Draws the checkerboard pattern on the canvas."""
         for rank in range(8):
             for file in range(8):
                 x1, y1 = file * self.square_size, rank * self.square_size
@@ -114,7 +104,6 @@ class ChessGUI(tk.Tk):
 
 
     def update_board_pieces(self):
-        """Clears old pieces and draws pieces based on the current board_array."""
         self.canvas.delete("piece")
         piece_symbols = { 1:'P',-1:'p', 2:'N',-2:'n', 3:'B',-3:'b', 4:'R',-4:'r', 5:'Q',-5:'q', 6:'K',-6:'k'}
         for index in range(64):
@@ -128,7 +117,6 @@ class ChessGUI(tk.Tk):
 
 
     def highlight_square(self, index_1d, color, tag="highlight"):
-        """Highlights a given square with an outline."""
         rank, file = divmod(index_1d, 8)
         x1, y1 = file * self.square_size, rank * self.square_size
         x2, y2 = x1 + self.square_size, y1 + self.square_size
@@ -136,7 +124,6 @@ class ChessGUI(tk.Tk):
 
 
     def highlight_legal_moves(self, moves):
-        """Draws small circles on legal destination squares."""
         self.canvas.delete("legal_move_highlight")
         radius = self.square_size / 8
         for move in moves:
@@ -150,52 +137,44 @@ class ChessGUI(tk.Tk):
 
 
     def clear_highlights(self):
-        """Clears all highlights from the board."""
         self.canvas.delete("highlight")
         self.canvas.delete("legal_move_highlight")
 
 
     def update_status_label(self):
-        """Updates the label indicating whose turn it is."""
         turn_text = "White to move" if self.is_white_turn else ""
         self.status_label.config(text=turn_text)
 
-    # --- Helper for Formatting Moves ---
     def format_move_algebraic(self, move_tuple):
-        """Converts a move tuple to simple algebraic string."""
         from_sq = u.index_1d_to_square(move_tuple[0])
         to_sq = u.index_1d_to_square(move_tuple[1])
         move_info = move_tuple[2] if len(move_tuple) > 2 else None
 
         if move_info == 'castle_k': return "O-O"
         elif move_info == 'castle_q': return "O-O-O"
-        elif move_info == 'ep': return f"{from_sq}x{to_sq} e.p." # Indicate en passant
+        elif move_info == 'ep': return f"{from_sq}x{to_sq} e.p."
         elif move_info in ('q', 'r', 'n', 'b', 'Q', 'R', 'N', 'B'): return f"{from_sq}-{to_sq}={move_info.upper()}"
-        # Could add 'x' for captures by checking board state before move, but simpler without for now
         else: return f"{from_sq}-{to_sq}"
 
-    # --- Helper for Updating History Display ---
     def update_history_display(self):
-        """Updates the text box with the formatted move history."""
-        self.history_text.config(state='normal') # Enable writing
-        self.history_text.delete('1.0', tk.END) # Clear previous content
+        self.history_text.config(state='normal')
+        self.history_text.delete('1.0', tk.END)
 
         full_move_number = 1
         for i, move_tuple in enumerate(self.move_history):
             move_str = self.format_move_algebraic(move_tuple)
-            if i % 2 == 0: # White's move
+            if i % 2 == 0:
                 if i > 0: self.history_text.insert(tk.END, "\n")
                 self.history_text.insert(tk.END, f"{full_move_number}. {move_str}")
-            else: # Black's move
-                self.history_text.insert(tk.END, f"  {move_str}") # Indent black's move slightly
+            else: 
+                self.history_text.insert(tk.END, f"  {move_str}") 
                 full_move_number += 1
 
-        self.history_text.see(tk.END) # Scroll to the bottom
-        self.history_text.config(state='disabled') # Disable writing again
+        self.history_text.see(tk.END)
+        self.history_text.config(state='disabled')
 
 
     def on_square_click(self, event):
-        """Handles clicks on the board for selecting and making moves."""
         if not self.is_white_turn:
             print("Ignoring click - Not player's turn.")
             return
@@ -211,7 +190,7 @@ class ChessGUI(tk.Tk):
         self.error_message_label.config(text="")
 
         if self.from_square_index is None:
-            # First Click
+
             if clicked_piece_value > 0:
                 self.from_square_index = index_1d
                 print(f"  Selected FROM: {square_notation} (Value: {clicked_piece_value})")
@@ -232,7 +211,7 @@ class ChessGUI(tk.Tk):
             else:
                 self.clear_highlights(); self.from_square_index = None
         else:
-            # Second Click
+
             to_square_index = index_1d
             print(f"  Selected TO: {u.index_1d_to_square(to_square_index)}")
             complete_move_tuple = None
@@ -242,7 +221,7 @@ class ChessGUI(tk.Tk):
 
             if complete_move_tuple:
                 print(f"  Attempting legal move: {complete_move_tuple}")
-                # Default promotion to Queen if needed
+
                 if abs(self.board_array[complete_move_tuple[0]]) == 1 and (to_square_index // 8) == 0 :
                     if len(complete_move_tuple) < 3 or complete_move_tuple[2] not in ('q','r','n','b'):
                          print("  (Promotion detected: defaulting to Queen)")
@@ -251,7 +230,7 @@ class ChessGUI(tk.Tk):
                 self.handle_user_turn(complete_move_tuple)
 
             elif clicked_piece_value > 0 and index_1d != self.from_square_index:
-                # Change Selection
+
                 self.from_square_index = index_1d
                 print(f"  Changed selection TO: {square_notation} (Value: {clicked_piece_value})")
                 self.highlight_square(index_1d, "blue")
@@ -267,7 +246,7 @@ class ChessGUI(tk.Tk):
                     print(f"Error getting legal moves: {e}")
                     self.error_message_label.config(text=f"Err checking moves")
                     self.clear_highlights(); self.from_square_index = None
-                return # Keep selection state
+                return
             else:
                 print("  Invalid destination or deselecting.")
 
@@ -282,7 +261,7 @@ class ChessGUI(tk.Tk):
         try:
             _ = make_move(self.board_array, move_tuple, self.castling_rights, self.en_passant_target)
 
-            # Add to history BEFORE updating GUI state mirroring engine
+
             self.move_history.append(move_tuple)
             self.update_history_display()
 
@@ -290,14 +269,14 @@ class ChessGUI(tk.Tk):
             self.en_passant_target = chess_engine.en_passant_target
             self.is_white_turn = (chess_engine.side_to_move == 'w')
             print(f"  State after user move: CR='{self.castling_rights}', EP={self.en_passant_target}, Turn={'W' if self.is_white_turn else 'B'}")
-
+            
             self.update_board_pieces()
             self.update_status_label()
 
             is_game_over = self.check_game_over(for_engine_turn=True)
             if not is_game_over:
                 print("Scheduling engine move...")
-                self.after(100, lambda: self.trigger_engine_move()) # Restore automatic trigger
+                self.after(100, lambda: self.trigger_engine_move())
             else:
                 print("Game over detected after player move.")
 
@@ -308,7 +287,6 @@ class ChessGUI(tk.Tk):
 
 
     def trigger_engine_move(self):
-        """Handles the engine's thinking and move execution."""
         print("\n--- Debug: Entering trigger_engine_move ---")
         if self.is_white_turn: return
 
@@ -328,13 +306,11 @@ class ChessGUI(tk.Tk):
             print(f"Debug: find_best_move returned: move={engine_best_move}, eval={engine_eval}")
 
             if engine_best_move:
-                # Display last move BEFORE making it
                 engine_move_str_formatted = self.format_move_algebraic(engine_best_move)
                 self.engine_move_display.config(text=f"Engine's Last Move: {engine_move_str_formatted}")
 
                 _ = make_move(self.board_array, engine_best_move, self.castling_rights, self.en_passant_target)
 
-                # Add to history AFTER making the move
                 self.move_history.append(engine_best_move)
                 self.update_history_display()
 
@@ -346,10 +322,10 @@ class ChessGUI(tk.Tk):
                 self.update_board_pieces()
                 self.update_status_label()
 
-                self.check_game_over(for_engine_turn=False) # Check if player now has moves
+                self.check_game_over(for_engine_turn=False)
             else:
                 print("Debug: Engine returned no move. Game Over.")
-                self.check_game_over(for_engine_turn=True) # Display final status for Black
+                self.check_game_over(for_engine_turn=True)
 
         except Exception as e:
             print(f"\n--- ERROR during engine move logic ---")
@@ -361,7 +337,6 @@ class ChessGUI(tk.Tk):
     def check_game_over(self, for_engine_turn):
         """Checks if the player whose turn it is has legal moves, updates status if over."""
         player_is_white = not for_engine_turn
-        # Check moves for the player whose turn it *would* be
         current_player_legal_moves = get_legal_moves(
             self.board_array, player_is_white, self.castling_rights, self.en_passant_target
         )
@@ -377,17 +352,17 @@ class ChessGUI(tk.Tk):
                     print("Stalemate! Draw.")
                     self.status_label.config(text="Stalemate! Draw.")
                 self.engine_move_display.config(text="Game Over")
-                # Consider disabling interaction
                 self.canvas.unbind("<Button-1>")
                 return True
             except Exception as check_err:
                  print(f"Debug: Error during is_king_in_check: {check_err}")
                  self.status_label.config(text="Error checking game end")
-                 return False # Or True? Undefined state
+                 return False
         return False
 
 
-# --- Main Execution ---
+
+
 if __name__ == "__main__":
     gui = ChessGUI()
     gui.mainloop()

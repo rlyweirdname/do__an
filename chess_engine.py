@@ -1,7 +1,3 @@
-side_to_move = 'w'
-castling_rights = "KQkq"
-en_passant_target = None
-
 from move_gen import (generate_knight_moves, generate_rook_moves,
                       generate_bishop_moves, generate_queen_moves,
                       generate_pawn_moves, generate_king_moves,
@@ -9,11 +5,22 @@ from move_gen import (generate_knight_moves, generate_rook_moves,
                       generate_pseudo_legal_moves 
                      )
 import utils as u
+board_array = None
 import cProfile
 import pstats
 import sys
 import time
 import copy 
+
+def reset_game_state():
+    global board_array, side_to_move, castling_rights, en_passant_target, halfmove_clock, fullmove_number
+    # Re-initialize from starting FEN or defaults
+    board_array = u.get_starting_board_array()
+    side_to_move = 'w'
+    castling_rights = 'KQkq'
+    en_passant_target = None
+    halfmove_clock = 0
+    fullmove_number = 1
 
 def evaluate_board(board):
     piece_values = {'p': 100, 'n': 320, 'b': 330, 'r': 500, 'q': 900, 'k': 20000}
@@ -162,52 +169,74 @@ def is_king_in_check(board, color_is_white):
 
 def get_legal_moves(board, is_white_turn, current_castling_rights, current_en_passant_target):
     legal_moves = []
+    # Generate moves that are legal except for checks
     pseudo_legal_moves = generate_pseudo_legal_moves(board, is_white_turn, current_castling_rights, current_en_passant_target)
+
     for move in pseudo_legal_moves:
+        # Work on a copy of the board to avoid side effects
         temp_board = list(board)
-        captured_piece, old_castling_rights, old_en_passant_target = make_move(
-            temp_board, move, current_castling_rights, current_en_passant_target, is_simulation=True
+
+        # Make the move on the temporary board. Ignore returned state variables.
+        # Remove the is_simulation argument from the call:
+        _, _, _ = make_move(
+            temp_board, move, current_castling_rights, current_en_passant_target
         )
+        # Note: make_move still flips the global side_to_move here. This is a minor
+        # side effect within get_legal_moves, but shouldn't break the search logic
+        # as long as the search itself handles the turn correctly. Ideally, make_move
+        # wouldn't modify ANY globals, but we'll leave side_to_move for now.
+
+        # Check if the king of the player who just moved is now in check
         king_in_check_after_move = is_king_in_check(temp_board, is_white_turn)
+
+        # If the king is NOT in check, the move is fully legal
         if not king_in_check_after_move:
             legal_moves.append(move)
+
+        # Since make_move flipped global side_to_move, flip it back here
+        # to ensure the check for the *next* pseudo_legal_move is done
+        # with the correct original side_to_move context if is_king_in_check
+        # somehow depends on it (it shouldn't, but good practice).
+        global side_to_move
+        side_to_move = 'b' if side_to_move == 'w' else 'w' # Flip back
+
     return legal_moves
 
 def find_best_move(board, depth, is_maximizing_player, current_castling_rights, current_en_passant_target):
-    global nodes_visited 
+    global nodes_visited # Keep this global if you need it
     nodes_visited = 0
     best_move = None
-    best_value = -float('inf') if is_maximizing_player else float('inf') 
+    best_value = -float('inf') if is_maximizing_player else float('inf')
 
     possible_moves = get_legal_moves(board, is_maximizing_player, current_castling_rights, current_en_passant_target)
 
     if not possible_moves:
         if is_king_in_check(board, is_maximizing_player):
-             return None, -float('inf') if is_maximizing_player else float('inf')
+             return None, (-float('inf') if is_maximizing_player else float('inf'))
         else:
-             return None, 0 
-
+             return None, 0
 
     import random
     random.shuffle(possible_moves)
-
-
 
     alpha = -float('inf')
     beta = float('inf')
 
     for move in possible_moves:
-        board_copy_before_move = list(board)
-        captured_piece, old_castling, old_ep = make_move(board, move, current_castling_rights, current_en_passant_target)
-        move_value = alphabeta(board, depth - 1, alpha, beta, not is_maximizing_player, castling_rights, en_passant_target)
-        undo_move(board, move, captured_piece, old_castling, old_ep)
+        board_copy = list(board)
+        _captured_piece_info, next_cr, next_ep = make_move(board_copy, move, current_castling_rights, current_en_passant_target) # make_move flips global side_to_move
+        move_value = alphabeta(board_copy, depth - 1, alpha, beta, not is_maximizing_player, next_cr, next_ep)
+
+        # ***** REMOVE THE FLIP-BACK *****
+        # global side_to_move   # REMOVE
+        # side_to_move = 'b' if side_to_move == 'w' else 'w' # REMOVE
 
         if is_maximizing_player:
             if move_value > best_value:
                 best_value = move_value
                 best_move = move
             alpha = max(alpha, best_value)
-        else: 
+        else:
              if move_value < best_value:
                  best_value = move_value
                  best_move = move
@@ -216,16 +245,19 @@ def find_best_move(board, depth, is_maximizing_player, current_castling_rights, 
         if beta <= alpha:
             break
 
+    if best_move is None and possible_moves:
+        print(f"WARNING: find_best_move finished loop but best_move is None. best_value={best_value}. Returning first move.")
+        best_move = possible_moves[0]
+
     return best_move, best_value
 
 
 def alphabeta(board, depth, alpha, beta, is_maximizing_player, current_castling_rights, current_en_passant_target):
-    global nodes_visited 
+    global nodes_visited # Keep this global if you need it
     nodes_visited += 1
 
     if depth == 0:
         return evaluate_board(board)
-
 
     possible_moves = get_legal_moves(board, is_maximizing_player, current_castling_rights, current_en_passant_target)
 
@@ -233,34 +265,35 @@ def alphabeta(board, depth, alpha, beta, is_maximizing_player, current_castling_
         if is_king_in_check(board, is_maximizing_player):
              return -float('inf') if is_maximizing_player else float('inf')
         else:
-             return 0 
-
+             return 0
 
     if is_maximizing_player:
         best_value = -float('inf')
         for move in possible_moves:
-            board_copy_before_move = list(board)
-            captured, old_castle, old_ep = make_move(board, move, current_castling_rights, current_en_passant_target) 
+            board_copy = list(board)
+            _captured, next_cr, next_ep = make_move(board_copy, move, current_castling_rights, current_en_passant_target) # make_move flips global side_to_move
+            value = alphabeta(board_copy, depth - 1, alpha, beta, False, next_cr, next_ep)
 
-            value = alphabeta(board, depth - 1, alpha, beta, False, castling_rights, en_passant_target) 
-
-            undo_move(board, move, captured, old_castle, old_ep)
+            # ***** REMOVE THE FLIP-BACK *****
+            # global side_to_move   # REMOVE
+            # side_to_move = 'b' if side_to_move == 'w' else 'w' # REMOVE
 
             best_value = max(best_value, value)
             alpha = max(alpha, best_value)
             if beta <= alpha:
-                break 
+                break
         return best_value
 
-    else:
+    else: # Minimizing player
         best_value = float('inf')
         for move in possible_moves:
-            board_copy_before_move = list(board)
-            captured, old_castle, old_ep = make_move(board, move, current_castling_rights, current_en_passant_target)
+            board_copy = list(board)
+            _captured, next_cr, next_ep = make_move(board_copy, move, current_castling_rights, current_en_passant_target) # make_move flips global side_to_move
+            value = alphabeta(board_copy, depth - 1, alpha, beta, True, next_cr, next_ep)
 
-            value = alphabeta(board, depth - 1, alpha, beta, True, castling_rights, en_passant_target)
-
-            undo_move(board, move, captured, old_castle, old_ep)
+            # ***** REMOVE THE FLIP-BACK *****
+            # global side_to_move   # REMOVE
+            # side_to_move = 'b' if side_to_move == 'w' else 'w' # REMOVE
 
             best_value = min(best_value, value)
             beta = min(beta, best_value)
@@ -268,38 +301,39 @@ def alphabeta(board, depth, alpha, beta, is_maximizing_player, current_castling_
                 break
         return best_value
 
-def make_move(board, move, current_castling_rights, current_ep_target, is_simulation=False):
-    global castling_rights, en_passant_target, side_to_move
+def make_move(board, move, current_castling_rights, current_ep_target):
+    # Keep the global side_to_move for now, but ideally this would also be returned/managed
+    global side_to_move
+
     from_index, to_index = move[:2]
     move_info = move[2] if len(move) > 2 else None
     piece = board[from_index]
-    captured_piece = board[to_index]
-    is_white = False
-    if piece != 0:
-         is_white = piece > 0
-    old_castling_rights = current_castling_rights
-    old_en_passant_target = current_ep_target
+    captured_piece = board[to_index] # Potential capture
+    is_white_moving = piece > 0 # Check color before moving
 
+    # Calculate old state needed for undo IF NOT USING COPIES, but we will use copies
+    # old_castling_rights = current_castling_rights
+    # old_en_passant_target = current_ep_target
+
+    # Apply move to board
     board[to_index] = piece
     board[from_index] = 0
 
+    # --- Handle special moves (EP, Promotion, Castling) ---
+    actual_captured_piece = captured_piece # Store originally captured piece
+
     if move_info == 'ep':
-        capturing_pawn_is_white = board[to_index] > 0
-
-        if capturing_pawn_is_white:
-            _cap_idx = to_index + 8 
+        capture_index = to_index + 8 if is_white_moving else to_index - 8
+        if 0 <= capture_index < 64:
+             actual_captured_piece = board[capture_index] # The pawn being captured EP
+             board[capture_index] = 0
         else:
-            _cap_idx = to_index - 8 
-
-        if 0 <= _cap_idx < 64:
-             captured_piece = board[_cap_idx] 
-             board[_cap_idx] = 0 
-        else:
-             print(f"ERROR: Invalid EP capture index calculation. Move: {move}, Target Index: {_cap_idx}")
-             captured_piece = 0
+             print(f"ERROR: Invalid EP capture index. Move: {move}, Target Index: {capture_index}")
+             actual_captured_piece = 0 # Should not happen
 
     elif move_info in ('q', 'r', 'n', 'b', 'Q', 'R', 'N', 'B'):
-        _p_color = 1 if board[to_index] > 0 else -1
+        # Promotion
+        _p_color = 1 if is_white_moving else -1
         _p_val = {'q': 5, 'r': 4, 'n': 2, 'b': 3}.get(move_info.lower())
         board[to_index] = _p_val * _p_color
 
@@ -310,90 +344,37 @@ def make_move(board, move, current_castling_rights, current_ep_target, is_simula
         _rank = from_index // 8; _r_from= _rank*8+0; _r_to=_rank*8+3
         board[_r_to] = board[_r_from]; board[_r_from] = 0
 
+    # --- Calculate next state (EP target, Castling rights) ---
     new_ep_target = None
-    _final_piece = board[to_index] 
-    if abs(_final_piece) == 1 and abs(from_index // 8 - to_index // 8) == 2:
+    piece_after_move = board[to_index] # Piece might have changed due to promotion
+    if abs(piece_after_move) == 1 and abs(from_index // 8 - to_index // 8) == 2: # Pawn double push
         new_ep_target = (from_index + to_index) // 2
 
-  
     new_castling_rights = current_castling_rights
+    # King move
     if abs(piece) == 6:
-        if is_white: new_castling_rights = new_castling_rights.replace('K','').replace('Q','')
+        if is_white_moving: new_castling_rights = new_castling_rights.replace('K','').replace('Q','')
         else: new_castling_rights = new_castling_rights.replace('k','').replace('q','')
-    elif abs(piece) == 4: 
+    # Rook move
+    elif abs(piece) == 4:
         if from_index == u.square_to_index_1d('a1'): new_castling_rights = new_castling_rights.replace('Q','')
         elif from_index == u.square_to_index_1d('h1'): new_castling_rights = new_castling_rights.replace('K','')
         elif from_index == u.square_to_index_1d('a8'): new_castling_rights = new_castling_rights.replace('q','')
         elif from_index == u.square_to_index_1d('h8'): new_castling_rights = new_castling_rights.replace('k','')
-
-    if captured_piece != 0 and abs(captured_piece) == 4:
+    # Rook capture
+    if actual_captured_piece != 0 and abs(actual_captured_piece) == 4:
         if to_index == u.square_to_index_1d('a1'): new_castling_rights = new_castling_rights.replace('Q','')
         elif to_index == u.square_to_index_1d('h1'): new_castling_rights = new_castling_rights.replace('K','')
         elif to_index == u.square_to_index_1d('a8'): new_castling_rights = new_castling_rights.replace('q','')
         elif to_index == u.square_to_index_1d('h8'): new_castling_rights = new_castling_rights.replace('k','')
 
-    if not is_simulation:
-        castling_rights = new_castling_rights
-        en_passant_target = new_ep_target
-        side_to_move = 'b' if side_to_move == 'w' else 'w'
-    return captured_piece, old_castling_rights, old_en_passant_target
-
-
-      
-def undo_move(board, move, captured_piece, old_castling_rights, old_en_passant_target):
-    global castling_rights, en_passant_target, side_to_move 
-    from_index, to_index = move[:2]
-    move_info = move[2] if len(move) > 2 else None
-    moved_piece = board[to_index]
-
-    #Promotion
-    if move_info in ('q', 'r', 'n', 'b', 'Q', 'R', 'N', 'B'):
-        pawn_color = 1 if moved_piece > 0 else -1
-        board[from_index] = pawn_color * 1 
-        board[to_index] = captured_piece
-    #EP
-    elif move_info == 'ep':
-         is_white_capturing_move = moved_piece > 0
-         board[from_index] = moved_piece
-         board[to_index] = 0
-         if is_white_capturing_move:
-             captured_pawn_index = to_index + 8 
-         else: 
-             captured_pawn_index = to_index - 8 
-         if 0 <= captured_pawn_index < 64:
-             board[captured_pawn_index] = captured_piece
-         else:
-             print(f"ERROR: Invalid EP undo calculation. Move: {move}, Captured Pawn Index: {captured_pawn_index}")
-
-    #Castling
-    elif move_info == 'castle_k': #Kingside
-        board[from_index] = moved_piece 
-        board[to_index] = 0
-
-        rank = from_index // 8
-        rook_from = rank * 8 + 7
-        rook_to = rank * 8 + 5
-        rook_piece = board[rook_to]
-        board[rook_to] = 0
-        board[rook_from] = rook_piece
-    elif move_info == 'castle_q': #Queenside
-        board[from_index] = moved_piece
-        board[to_index] = 0
- 
-        rank = from_index // 8
-        rook_from = rank * 8 + 0 
-        rook_to = rank * 8 + 3
-        rook_piece = board[rook_to]
-        board[rook_to] = 0
-        board[rook_from] = rook_piece
-    else:
-         board[from_index] = moved_piece 
-         board[to_index] = captured_piece
-
-
-    castling_rights = old_castling_rights
-    en_passant_target = old_en_passant_target
+    # Flip global side_to_move (can be kept for simplicity if CLI updates based on it)
+    # Consider returning the next side to move as well for better encapsulation
     side_to_move = 'b' if side_to_move == 'w' else 'w'
+
+    # Return the actual captured piece and the calculated next state
+    return actual_captured_piece, new_castling_rights, new_ep_target
+
 
 #test/debug board
 def create_test_board_minimax_start():

@@ -250,7 +250,7 @@ def alphabeta(board, depth, alpha, beta, is_maximizing_player, current_castling_
         best_value = -float('inf')
         for move in possible_moves:
             board_copy = list(board)
-            _captured, next_cr, next_ep = make_move(board_copy, move, current_castling_rights, current_en_passant_target) # make_move flips global side_to_move
+            _captured, next_cr, next_ep = make_move(board_copy, move, current_castling_rights, current_en_passant_target)
             value = alphabeta(board_copy, depth - 1, alpha, beta, False, next_cr, next_ep)
 
             best_value = max(best_value, value)
@@ -263,7 +263,7 @@ def alphabeta(board, depth, alpha, beta, is_maximizing_player, current_castling_
         best_value = float('inf')
         for move in possible_moves:
             board_copy = list(board)
-            _captured, next_cr, next_ep = make_move(board_copy, move, current_castling_rights, current_en_passant_target) # make_move flips global side_to_move
+            _captured, next_cr, next_ep = make_move(board_copy, move, current_castling_rights, current_en_passant_target)
             value = alphabeta(board_copy, depth - 1, alpha, beta, True, next_cr, next_ep)
 
             best_value = min(best_value, value)

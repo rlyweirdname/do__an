@@ -14,7 +14,6 @@ import utils as u
 DEFAULT_SEARCH_DEPTH = 6 
 MAX_MOVES = 150
 
-# --- Helper Functions ---
 
 def print_board_ascii(board_array):
     if not isinstance(board_array, list) or len(board_array) != 64:

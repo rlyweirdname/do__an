@@ -4,7 +4,6 @@ import utils as u
 import time
 import chess_engine 
 from chess_engine import ( 
-    create_test_board_minimax_start,
     find_best_move,
     make_move,
     get_legal_moves,
@@ -300,8 +299,8 @@ class ChessGUI(tk.Tk):
             print(f"Debug: Calling find_best_move (depth={search_depth}, is_maximizing=False)")
             engine_best_move, engine_eval = find_best_move(
                 self.board_array, depth=search_depth, is_maximizing_player=False,
-                current_castling_rights=self.castling_rights,
-                current_en_passant_target=self.en_passant_target
+                current_cr=self.castling_rights,
+                current_ep=self.en_passant_target
             )
             print(f"Debug: find_best_move returned: move={engine_best_move}, eval={engine_eval}")
 

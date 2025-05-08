@@ -1,29 +1,20 @@
 import sys
 import time
-import chess_engine # Your main chess engine logic module
-import utils as u   # Your utility functions
-import io           # For test mode (if used separately)
-import traceback    # For detailed error logging
+import chess_engine
+import utils as u  
+import io 
+import traceback    
 
-# --- Piece Constants for FEN Parsing (within UCI context) ---
 PIECE_MAP_FEN_TO_INT = {
     'P': 1, 'N': 2, 'B': 3, 'R': 4, 'Q': 5, 'K': 6,
     'p': -1, 'n': -2, 'b': -3, 'r': -4, 'q': -5, 'k': -6
 }
 
-# --- Logging Function ---
+
 def log(message):
-    """Prints message to stderr for debugging UCI communication."""
-    # Using "info string" prefix helps GUIs potentially filter logs
     print(f"info string [UCI LOG] {message}", file=sys.stderr, flush=True)
 
-# --- Helper: FEN Parser ---
 def parse_fen_and_set_engine_state(fen_string):
-    """
-    Parses a FEN string and updates the global state in the chess_engine module.
-    Assumes chess_engine has required module-level variables.
-    Raises ValueError on parsing errors.
-    """
     log(f"Attempting to parse FEN: {fen_string}")
     parts = fen_string.split()
     if len(parts) < 4: raise ValueError(f"Invalid FEN: Expected >= 4 parts. Got: {fen_string}")
@@ -32,7 +23,6 @@ def parse_fen_and_set_engine_state(fen_string):
     halfmove_str = parts[4] if len(parts) > 4 else "0"
     fullmove_str = parts[5] if len(parts) > 5 else "1"
 
-    # Board Parsing
     new_board_array = [0] * 64; rank, file_idx = 0, 0; squares_described = 0
     for char_fen in board_str:
         if rank >= 8: break
@@ -56,17 +46,14 @@ def parse_fen_and_set_engine_state(fen_string):
     if squares_described != 64: raise ValueError(f"FEN described {squares_described} squares, expected 64.")
     chess_engine.board_array = new_board_array
 
-    # Turn Parsing
     if turn_char == 'w': chess_engine.side_to_move = 'w'
     elif turn_char == 'b': chess_engine.side_to_move = 'b'
     else: raise ValueError(f"FEN invalid turn '{turn_char}'.")
 
-    # Castling Rights Parsing
     if not all(c in 'KQkq-' for c in cr_str) or (cr_str != '-' and len(set(cr_str)) != len(cr_str)):
         raise ValueError(f"FEN invalid castling rights '{cr_str}'.")
     chess_engine.castling_rights = cr_str
 
-    # En Passant Target Parsing
     if ep_str == '-': chess_engine.en_passant_target = None
     else:
         try:
@@ -80,7 +67,6 @@ def parse_fen_and_set_engine_state(fen_string):
                 chess_engine.en_passant_target = None
         except ValueError: raise ValueError(f"FEN invalid EP target square '{ep_str}'.")
 
-    # Clock Parsing
     try:
         chess_engine.halfmove_clock = int(halfmove_str)
         chess_engine.fullmove_number = int(fullmove_str)
@@ -89,9 +75,7 @@ def parse_fen_and_set_engine_state(fen_string):
     log("FEN parsed successfully.")
 
 
-# --- Helper: UCI Move String to Engine's Internal Move Tuple ---
 def find_matching_move_tuple(board_state, uci_move_str, current_player_is_white, current_cr, current_ep):
-    """ Finds the internal move tuple matching a UCI move string. """
     if len(uci_move_str) < 4 or len(uci_move_str) > 5: raise ValueError(f"Invalid UCI move length: {uci_move_str}")
     from_sq_str, to_sq_str = uci_move_str[0:2], uci_move_str[2:4]
     uci_promo_char = uci_move_str[4].lower() if len(uci_move_str) == 5 else None
@@ -110,9 +94,7 @@ def find_matching_move_tuple(board_state, uci_move_str, current_player_is_white,
     raise ValueError(f"UCI move '{uci_move_str}' not found in pseudo-legal list.")
 
 
-# --- Helper: Engine's Internal Move Tuple to UCI Move String ---
 def tuple_to_uci_move(move_tuple):
-    """ Converts internal move tuple back to UCI move string. """
     if not isinstance(move_tuple, tuple) or len(move_tuple) < 2: return "0000" 
     from_idx, to_idx = move_tuple[:2]
     move_info = move_tuple[2] if len(move_tuple) > 2 else None
@@ -121,24 +103,18 @@ def tuple_to_uci_move(move_tuple):
     promo = move_info.lower() if isinstance(move_info, str) and move_info.lower() in 'qrbn' else ""
     return f"{from_sq}{to_sq}{promo}"
 
-# --- Main UCI Loop ---
 def uci_loop():
-    """ Main UCI communication loop using stdin/stdout. """
     log("UCI Engine Booting...")
-    # Ensure chess_engine state is initialized (can be redundant if engine init does it)
-    # chess_engine.reset_game_state() 
-
     while True:
         try:
-            # Use try-except for readline to handle potential issues if stdin closes unexpectedly
             line = sys.stdin.readline()
-            if not line: # Check for EOF or empty line after potential error
+            if not line:
                  log("Received EOF or empty line, exiting.")
                  break 
-            line = line.strip() # Remove leading/trailing whitespace
-            if not line: continue # Ignore truly empty lines
+            line = line.strip() 
+            if not line: continue 
 
-        except Exception as e: # Catch errors during readline
+        except Exception as e: 
             log(f"Input error or EOF: {e}. Exiting.")
             break
         
@@ -147,8 +123,13 @@ def uci_loop():
         if not parts: continue
         command = parts[0]
 
-        # --- Handle UCI Commands ---
-        try: # Add a general try-except around command processing
+        try:
+            #cmds:
+            #position startpos moves e2e4 e7e5
+            #uci
+            #isready
+            #quit
+            #ucinewgame
             if command == "uci":
                 print(f"id name {getattr(chess_engine, 'ENGINE_NAME', 'PyChessBot')}")
                 print(f"id author {getattr(chess_engine, 'AUTHOR_NAME', 'Anonymous')}")
@@ -159,7 +140,7 @@ def uci_loop():
                 log("Quit command received. Exiting.")
                 break
             elif command == "ucinewgame":
-                chess_engine.reset_game_state() # Expects this to reset globals in chess_engine
+                chess_engine.reset_game_state() 
                 log("New game state initialized.")
             
             elif command == "position":
@@ -178,22 +159,20 @@ def uci_loop():
                     fen_string = " ".join(parts[fen_keyword_idx + 1 : fen_parts_end_idx])
                     log(f"  Processing 'fen': {fen_string}")
                     try:
-                        parse_fen_and_set_engine_state(fen_string) # Updates chess_engine's globals
+                        parse_fen_and_set_engine_state(fen_string) 
                     except Exception as fen_e:
                         log(f"  Error parsing FEN '{fen_string}': {fen_e}. Resetting to startpos.")
-                        chess_engine.reset_game_state() # Fallback
+                        chess_engine.reset_game_state()
                     moves_start_idx = moves_keyword_idx + 1 if moves_keyword_idx != -1 else len(parts)
                 else:
                     raise ValueError("'position' command requires 'startpos' or 'fen'.")
 
-                # Apply moves if the 'moves' keyword was found
                 if moves_keyword_idx != -1 and moves_start_idx < len(parts):
                     move_list = parts[moves_start_idx:]
                     log(f"  Applying moves: {move_list}")
                     for uci_move_str in move_list:
                         log(f"    Attempting to apply: {uci_move_str}")
                         try:
-                            # Get state BEFORE applying this move
                             board_state = list(chess_engine.board_array)
                             turn_is_white = chess_engine.side_to_move == 'w'
                             cr_state = chess_engine.castling_rights
@@ -202,27 +181,25 @@ def uci_loop():
                             full_move_tuple = find_matching_move_tuple(board_state, uci_move_str, turn_is_white, cr_state, ep_state)
                             log(f"      Matched internal move: {full_move_tuple}")
                             
-                            # Apply move - MUST update globals in chess_engine
                             chess_engine.make_move(chess_engine.board_array, full_move_tuple, cr_state, ep_state)
                             log(f"      Move {uci_move_str} applied. New turn: {chess_engine.side_to_move}")
-                        except ValueError as ve: # Error matching move
+                        except ValueError as ve: 
                             log(f"    ERROR: Could not match UCI move '{uci_move_str}': {ve}. Stopping move application.")
-                            raise # Re-raise to stop processing this position command
-                        except Exception as e_make: # Error making move
+                            raise 
+                        except Exception as e_make:
                             log(f"    ERROR applying matched move '{uci_move_str}' ({full_move_tuple}): {e_make}. Stopping.")
-                            raise # Re-raise
+                            raise
                 log("Position setup complete.")
 
             elif command == "go":
-                search_depth = 5 # Default
+                search_depth = 5 
                 if "depth" in parts:
                     try: search_depth = int(parts[parts.index("depth") + 1])
                     except: pass 
                 log(f"Starting search (Depth: {search_depth}) for side: {chess_engine.side_to_move}")
                 start_time = time.time()
-                # Call find_best_move with current global state from chess_engine
                 best_m_tuple, _ = chess_engine.find_best_move(
-                    list(chess_engine.board_array), # Pass copy of current board
+                    list(chess_engine.board_array), 
                     search_depth, chess_engine.side_to_move == 'w',
                     chess_engine.castling_rights, chess_engine.en_passant_target
                 )
@@ -235,23 +212,18 @@ def uci_loop():
             else:
                 log(f"Unknown command: '{command}'")
         
-        except Exception as cmd_e: # Catch errors during command processing
+        except Exception as cmd_e: 
              log(f"ERROR processing command '{line}': {cmd_e}")
-             log(traceback.format_exc()) # Log full traceback for debugging
-             # Continue to next command if possible, or break if it's fatal?
-             # For robustness with GUIs, often best to try and continue.
-
+             log(traceback.format_exc())
         finally:
-             sys.stdout.flush() # Ensure output is sent after each command
+             sys.stdout.flush() 
 
 
-# --- Main Execution Block ---
+
 if __name__ == "__main__":
-    # Removed the --test-uci block for clarity, assuming execution in an env
-    # where chess_engine and utils are properly imported/available.
     try:
         uci_loop()
-    except Exception as main_e: # Catch any unexpected exit errors
+    except Exception as main_e: 
         log(f"FATAL ERROR in main UCI loop: {main_e}")
         log(traceback.format_exc())
 

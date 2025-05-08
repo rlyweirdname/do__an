@@ -6,7 +6,6 @@ piece_char_from_int = {
 }
 
 def get_starting_board_array():
-    """Generates the starting board array from the hardcoded FEN."""
     board_1d = [0] * 64
     fen_placement = starting_fen_pieces.split(' ')[0] 
     rank = 0
@@ -24,7 +23,6 @@ def get_starting_board_array():
     return board_1d
 
 def square_to_index_1d(square_notation):
-    """Converts algebraic notation (e.g., 'e4') to 0-63 index (a8=0)."""
     try:
         file_char = square_notation[0].lower()
         rank_char = square_notation[1]
@@ -39,7 +37,6 @@ def square_to_index_1d(square_notation):
          raise ValueError(f"Invalid square notation: '{square_notation}'") from e
 
 def index_1d_to_square(index_1d):
-    """Converts 0-63 index (a8=0) to algebraic notation (e.g., 'e4')."""
     if not (0 <= index_1d <= 63):
         raise ValueError(f"Index out of range (0-63): {index_1d}")
     rank_index_from_top = index_1d // 8 
@@ -49,11 +46,9 @@ def index_1d_to_square(index_1d):
     return file_char + rank_char
 
 def piece_int_to_char(piece_value):
-    """Converts piece integer value to its character representation."""
     return piece_char_from_int.get(piece_value, '?')
 
 def print_board(board):
-    """Prints a simple ASCII representation of the board."""
     print("\n  a b c d e f g h")
     print(" +-----------------+")
     for rank in range(8):

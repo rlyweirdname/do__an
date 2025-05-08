@@ -11,10 +11,10 @@ from chess_engine import (
 import utils as u
 
 
-DEFAULT_SEARCH_DEPTH = 6 
+DEFAULT_SEARCH_DEPTH = 4 
 MAX_MOVES = 150
 
-# --- Helper Functions ---
+#helper functions
 
 def print_board_ascii(board_array):
     if not isinstance(board_array, list) or len(board_array) != 64:
@@ -200,5 +200,6 @@ def run_game(white_depth=DEFAULT_SEARCH_DEPTH, black_depth=DEFAULT_SEARCH_DEPTH,
 
 
 if __name__ == "__main__":
-    game_result = run_game(white_depth=3, black_depth=3, verbose=True)
+    game_result = run_game(white_depth=4, black_depth=4, verbose=True)
     print(f"\nFinal Game Result: {game_result}")
+    print(f"depth: {DEFAULT_SEARCH_DEPTH}")

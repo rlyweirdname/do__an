@@ -61,3 +61,5 @@ def print_board(board):
         print(f"|{8-rank}")
     print(" +-----------------+")
     print("  a b c d e f g h")
+
+    
